@@ -75,6 +75,66 @@ class Common
         }
     }
 
+    public function addressToCoordinate($address, $merchant_id = '')
+    {
+
+        try {
+            $cacheKey = 'address-coordinate-'.md5($address);
+
+            // 從獲取座標
+            $userLocation = redisx()->get($cacheKey);
+            if ($userLocation) {
+                return $userLocation;
+            }
+
+            $key = 'time=' . time();
+
+            // requestLog：寫日志
+            requestLog('Backend', 'Thrift', 'Http', 'phpgeohelper\\Geocoding->convert_addresses', 'https://geo-helper-hostr.ks-it.co',  [[$address, $key]]);
+
+            // getThriftService： 獲取 Thrift 服務
+            $geoHelper = ServiceContainer::getThriftService('phpgeohelper\\Geocoding');
+            $param = json_encode([[$address, $key]]);
+
+            // 調用接口，以地址獲取座標
+            $response = $geoHelper->convert_addresses($param);
+            $response = json_decode($response, true);
+
+            if ($response['error'] != 0) {
+                responseLog('Backend', 'phpgeohelper\\Geocoding->hksf_addresses', 'https://geo-helper-hostr.ks-it.co', '401', '401',  $response);
+                return false;
+            }
+
+            responseLog('Backend', 'phpgeohelper\\Geocoding->hksf_addresses', 'https://geo-helper-hostr.ks-it.co', '200', '0',  $response);
+            $data = $response['data'][0];
+            $coordinate = $data['coordinate'];
+            if (!isset($data['error']) && strpos($coordinate,',') !== false) {
+                $arr = explode(',', $coordinate);
+                $user_location = $arr[1] . ',' . $arr[0];
+
+                // set cache
+                redisx()->set($cacheKey, $user_location);
+                return $user_location;
+            } elseif ($coordinate == '-999,-999') {
+                // 如果返回 '-999,-999'，表示調用接口失敗，那麼直接使用商家位置的座標
+                infoLog('geoHelper->hksf_addresses change failed === ' . $address);
+                if ($merchant_id) {
+                    $sMerchant = new Merchant();
+                    $res = $sMerchant->get_merchant_address($merchant_id);
+                    $user_location = $res['latitude'] . ',' . $res['longitude'];
+                    return $user_location;
+                }
+                infoLog('geoHelper->hksf_addresses change failed === merchant_id is null' . $merchant_id);
+                return false;
+            }
+
+            return false;
+        } catch (\Throwable $t) {
+            criticalLog('addressToCoordinate critical ==' . $t->getMessage());
+            return 0;
+        }
+    }
+
     // 回调状态过滤
     public static function checkStatusCallback($order_id, $status)
     {
@@ -92,4 +152,27 @@ class Common
         $open_status_arr = ['901' => 1, '902' => 2, '903' => 3];
         return $order_id.'-'.$open_status_arr[$status];
     }
+
+    public static function getCallbackOrderStatus($order_id, $status)
+    {
+        $status_arr = ['900' => 1, '901' => 1, '902' => 2, '903'=> 3, '909' =>1, '915' =>1, '916' => 1];
+        if (!isset($status_arr[$status])) {
+            return 0;
+        }
+
+        // 是900 可以回调
+        if ($status == 900) {
+            return 1;
+        }
+        // backend状态为 909 915 916 时 解锁工作单 但不回调
+        $code_arr = ['909', '915', '916'];
+        if (in_array($status, $code_arr)) {
+            infoLog('checkStatusCallback backend code is 909 915 916');
+            return 0;
+        }
+
+        return $order_id.'-'.$status_arr[$status];
+    }
+
+
 }

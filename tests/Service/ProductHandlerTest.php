@@ -65,4 +65,37 @@ class ProductHandlerTest extends TestCase
 
         $this->assertEquals(143, $totalPrice);
     }
+
+    /**
+     * 测试 总价格
+     */
+    public function testGetTotalPrice2()
+    {
+        $totalPrice =(new ProductHandler())->getTotalPrice($this->products);
+        $this->assertEquals(143, $totalPrice);
+    }
+
+    /**
+     * 测试 商品排序
+     * @return void
+     */
+    public function testGetProductSort()
+    {
+        $products =(new ProductHandler())->getProductSort($this->products);
+        array_multisort(array_column($this->products, 'price'), SORT_ASC, $this->products);
+        $this->assertSame($this->products, $products);
+    }
+
+    /**
+     * 测试 日期转时间戳
+     */
+    public function testConvertDateTimeToTimestamp()
+    {
+        foreach ($this->products as $product) {
+            $create_at_timestamp = strtotime($product['create_at']);
+            $create_timestamp =(new ProductHandler())->convertDateTimeToTimestamp($product);
+            $this->assertEquals($create_at_timestamp, $create_timestamp);
+        }
+    }
+
 }
